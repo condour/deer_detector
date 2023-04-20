@@ -1,7 +1,8 @@
 const axios = require("axios");
+const Nest = require("nest-cam");
+const fs = require("fs");
 require("dotenv").config();
 const express = require("express");
-const nodeWebCam = require("node-webcam");
 const DELAY_IN_MS = 5000;
 
 function renderBox({ width, height, x, y, confidence }) {
@@ -31,43 +32,54 @@ async function main() {
                 </body>
               </html>`);
   });
-  // specifying parameters for the pictures to be taken
-  const options = {
-    width: 1280,
-    height: 720,
-    quality: 60,
-    saveShots: false,
-    output: "jpeg",
-    device: false,
-    callbackReturn: "base64"
-  };
 
-  // create instance using the above options
-  const webcam = nodeWebCam.create(options);
+  const picAndWait = () => {
+    nest
+      .getLatestSnapshot()
+      .then((image) => {
+        image.pipe(fs.createWriteStream("nestImage.jpg"));
+        const data =
+          "data:image/png;base64," +
+          fs.readFileSync("nestImage.jpg", {
+            encoding: "base64"
+          });
 
-  const picAndWait = () =>
-    webcam.capture("test_picture", function (err, data) {
-      axios({
-        method: "POST",
-        url: "https://detect.roboflow.com/deer-detection-mvfx0/1",
-        params: {
-          api_key: process.env.API_KEY
-        },
-        data,
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded"
-        }
-      })
-        .then(function (response) {
-          console.log(response.data);
-          setTimeout(picAndWait, DELAY_IN_MS);
-          global.lastData = response.data;
-          global.lastimage = data;
+        axios({
+          method: "POST",
+          url: "https://detect.roboflow.com/deer-detection-mvfx0/1",
+          params: {
+            api_key: process.env.API_KEY
+          },
+          data,
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded"
+          }
         })
-        .catch(function (error) {
-          console.log(error.response.data.message);
-        });
-    });
+          .then(function (response) {
+            setTimeout(picAndWait, DELAY_IN_MS);
+            global.lastData = response.data;
+            if (
+              response.data.predictions.length > 0 &&
+              response.data.predictions[0].confidence > 0.7
+            ) {
+              var inStr = fs.createReadStream("nestImage.jpg");
+              var outStr = fs.createWriteStream(
+                `snaps/deer${response.data.time}.jpg`
+              );
+
+              inStr.pipe(outStr);
+            }
+            global.lastimage = data;
+          })
+          .catch(function (error) {
+            console.log(error.response.data.message);
+          });
+      })
+      .catch((e) => {
+        console.error("no image ");
+        setTimeout(picAndWait, DELAY_IN_MS);
+      });
+  };
   picAndWait();
 
   // Start the server

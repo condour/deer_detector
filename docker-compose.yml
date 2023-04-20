@@ -1,0 +1,8 @@
+version: '3'
+services:
+  nestcam:
+    networks:
+      - default
+    ports:
+      - "3000:3000"
+    build: .
